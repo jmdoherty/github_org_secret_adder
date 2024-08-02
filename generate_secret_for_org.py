@@ -3,15 +3,13 @@ from requests.exceptions import HTTPError
 import json
 import argparse
 import os
-import re
 import time
-import csv
 from base64 import b64encode
 from nacl import encoding, public
 
 # Process arguments
 parser = argparse.ArgumentParser(
-    description="Add or update secrets to a GitHub organization",
+    description="Encrypt and encode a string for an organization",
     formatter_class=argparse.ArgumentDefaultsHelpFormatter,
 )
 parser.add_argument(
@@ -24,21 +22,14 @@ parser.add_argument(
     "--org",
     dest="org",
     required=True,
-    help="Org to add secret to",
+    help="Organization to get the public key for and use to encrypt string",
 )
 parser.add_argument(
-    "--csvfile",
-    dest="csvfile",
+    "--input",
+    dest="input",
     required=True,
-    help="csv file with each line in the format secretname,secretvalue",
+    help="String to encrypt and encode",
 )
-parser.add_argument(
-    "--overwrite",
-    dest="overwrite",
-    action="store_true",
-    help="Set if to allow existing secrets to be overwritten, otherwise an error is thrown",
-)
-parser.set_defaults(overwrite=False)
 
 args = parser.parse_args()
 
@@ -50,8 +41,7 @@ if token is None:
 # Used in multiple functions
 urlBase = args.url
 org=args.org
-csvfile=args.csvfile
-overwrite=args.overwrite
+input=args.input
 
 ## Headers passed to every API call
 headers = {
@@ -135,47 +125,16 @@ def encrypt(public_key: str, secret_value: str) -> str:
     return b64encode(encrypted).decode("utf-8")
 
 # Add/update secret for an organization
-def add_org_secret(org,secretname,secretvalue):
-    validateSecretName(secretname)
-    url = f"{urlBase}/orgs/{org}/actions/secrets/{secretname}"
-
-    # Check if secret already exists
-    response = getJsonResponse(url, method="GET", allowNotFound=True)
-    if response:
-        if not overwrite:
-            print(f"ERROR: Secret {secretname} already exists, --overwrite was not set, exiting")
-            exit(1)
+def generate_encrypted_string_for_org(org,input):
 
     # Encrypt the secret value
     key_id, public_key = get_org_public_key(org)
-    encrypted_secret=encrypt(public_key, secretvalue)
-    data = {
-        "encrypted_value": encrypted_secret,
-        "key_id": key_id,
-        "visibility": "all"
-    }
-    getJsonResponse(url, method="PUT", data=json.dumps(data))
-
-def validateSecretName(secretname):
-    if not re.match("^[a-zA-Z_][a-zA-Z0-9_]*$", secretname):
-        print(f"ERROR: Secret name {secretname} invalid, can only contain alphanumeric characters ([a-z], [A-Z], [0-9]) or underscores (_). Spaces are not allowed. Must start with a letter ([a-z], [A-Z]) or underscores (_)")
-        exit(1)
-
-def main():
-    print(f"INFO: Adding secrets in {csvfile} to GitHub organization {org}")
+    return(encrypt(public_key, input))
     
-    secret_list = open(csvfile, "r")
-    secrets = csv.DictReader(
-        secret_list,
-        fieldnames=(
-            "secretName",
-            "secretValue",
-        ),
-    )
-
-    for secret in secrets:
-        print(f'INFO: Adding or updating secret {secret["secretName"]} ')
-        add_org_secret(org,secret["secretName"],secretvalue=secret["secretValue"])
+def main():
+    print(f'Encrypting input: "{input}" with public_key for org {org}')
+    output = generate_encrypted_string_for_org(org,input)
+    print(output)
 
 if __name__ == "__main__":
     main()
